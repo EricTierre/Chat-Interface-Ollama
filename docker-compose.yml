@@ -1,0 +1,10 @@
+version: '3.7'
+services:
+  chat-ollama-interface:
+    build:
+      context: .
+      dockerfile: dockerfile
+    ports:
+      - 11435:11435
+    environment:
+      - REACT_APP_API_URL=http://127.0.0.1:11434
