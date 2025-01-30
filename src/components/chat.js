@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Container, Row, Col, Form, Button, FloatingLabel, Collapse } from 'react-bootstrap';
+import { Container, Row, Col, Form, Button, FloatingLabel, Collapse, Image } from 'react-bootstrap';
 import axios from 'axios';
-import { IoSend } from "react-icons/io5";
+import { IoSend, IoImage } from "react-icons/io5";
 import ReactMarkdown from 'react-markdown';
 import remarkMath from 'remark-math';
 import remarkGfm from 'remark-gfm';
@@ -18,7 +18,9 @@ const ChatComponent = () => {
     const [model, setModel] = useState("");
     const [models, setModels] = useState([]);
     const [isDarkMode, setIsDarkMode] = useState(true);
+    const [selectedImage, setSelectedImage] = useState(null);
     const messageContainerRef = useRef(null);
+    const fileInputRef = useRef(null);
 
     const fetchModels = async () => {
         try {
@@ -42,6 +44,24 @@ const ChatComponent = () => {
         setInput(e.target.value);
     };
 
+    const handleImageSelect = (event) => {
+        const file = event.target.files[0];
+        if (file && file.type.startsWith('image/')) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                setSelectedImage(e.target.result);
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
+    const clearImage = () => {
+        setSelectedImage(null);
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
+    };
+
     const scrollToBottom = () => {
         if (messageContainerRef.current) {
             messageContainerRef.current.scrollTop = messageContainerRef.current.scrollHeight;
@@ -49,11 +69,19 @@ const ChatComponent = () => {
     };
 
     const handleSend = async () => {
-        if (input.trim() === '') return;
+        if (input.trim() === '' && !selectedImage) return;
 
-        const userMessage = { sender: 'user', text: input };
+        const userMessage = { 
+            sender: 'user', 
+            text: input,
+            image: selectedImage 
+        };
         setMessages(prev => [...prev, userMessage]);
         setInput('');
+        setSelectedImage(null);
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
         setIsLoading(true);
 
         try {
@@ -64,7 +92,11 @@ const ChatComponent = () => {
                 },
                 body: JSON.stringify({
                     model: model,
-                    messages: [{ role: 'user', content: input }],
+                    messages: [{ 
+                        role: 'user', 
+                        content: input,
+                        images: selectedImage ? [selectedImage] : undefined
+                    }],
                     stream: true
                 })
             });
@@ -185,69 +217,74 @@ const ChatComponent = () => {
 
                 <div className="message-container" ref={messageContainerRef}>
                     {messages.map((msg, index) => (
-                                <div key={index} className={`message-group`}>
-                                    {msg.sender === 'api' && msg.thinking && (
-                                        <div className="thinking-container">
-                                            <div
-                                                className="thinking-header"
-                                                onClick={() => {
-                                                    setMessages(prev => {
-                                                        const newMessages = [...prev];
-                                                        const message = newMessages[index];
-                                                        message.isThinkingOpen = !message.isThinkingOpen;
-                                                        return newMessages;
-                                                    });
-                                                }}
-                                            >
-                                                <span className={`toggle-icon ${msg.isThinkingOpen ? 'expanded' : ''}`}>▶</span>
-                                                Thinking Process
-                                            </div>
-                                            <Collapse in={msg.isThinkingOpen}>
-                                                <div>
-                                                    <div className="thinking-content">
-                                                        {msg.thinking}
-                                                    </div>
-                                                </div>
-                                            </Collapse>
-                                        </div>
-                                    )}
-                                    <div className={`message ${msg.sender === 'user' ? 'user-message' : 'api-message'}`}>
-                                        <ReactMarkdown 
-                                            remarkPlugins={[remarkMath, remarkGfm]}
-                                            rehypePlugins={[rehypeKatex, rehypeHighlight]}
-                                            components={{
-                                                p: ({node, ...props}) => <p style={{margin: 0}} {...props}/>,
-                                                a: ({node, ...props}) => <a target="_blank" rel="noopener noreferrer" {...props}/>,
-                                                pre: ({node, children, ...props}) => (
-                                                    <pre className="code-block" {...props}>
-                                                        {children}
-                                                    </pre>
-                                                ),
-                                                code: ({node, inline, className, children, ...props}) => {
-                                                    const match = /language-(\w+)/.exec(className || '');
-                                                    return !inline && match ? (
-                                                        <code className={className} {...props}>
-                                                            {children}
-                                                        </code>
-                                                    ) : (
-                                                        <code className="inline-code" {...props}>
-                                                            {children}
-                                                        </code>
-                                                    );
-                                                }
-                                            }}
-                                        >
-                                            {msg.text}
-                                        </ReactMarkdown>
-                                        {msg.isStreaming && (
-                                            <span className="typing-indicator">
-                                                <span>.</span>
-                                                <span>.</span>
-                                                <span>.</span>
-                                            </span>
-                                        )}
+                        <div key={index} className={`message-group`}>
+                            {msg.sender === 'api' && msg.thinking && (
+                                <div className="thinking-container">
+                                    <div
+                                        className="thinking-header"
+                                        onClick={() => {
+                                            setMessages(prev => {
+                                                const newMessages = [...prev];
+                                                const message = newMessages[index];
+                                                message.isThinkingOpen = !message.isThinkingOpen;
+                                                return newMessages;
+                                            });
+                                        }}
+                                    >
+                                        <span className={`toggle-icon ${msg.isThinkingOpen ? 'expanded' : ''}`}>▶</span>
+                                        Thinking Process
                                     </div>
+                                    <Collapse in={msg.isThinkingOpen}>
+                                        <div>
+                                            <div className="thinking-content">
+                                                {msg.thinking}
+                                            </div>
+                                        </div>
+                                    </Collapse>
                                 </div>
+                            )}
+                            <div className={`message ${msg.sender === 'user' ? 'user-message' : 'api-message'}`}>
+                                {msg.image && (
+                                    <div className="message-image">
+                                        <Image src={msg.image} alt="Uploaded" fluid />
+                                    </div>
+                                )}
+                                <ReactMarkdown 
+                                    remarkPlugins={[remarkMath, remarkGfm]}
+                                    rehypePlugins={[rehypeKatex, rehypeHighlight]}
+                                    components={{
+                                        p: ({node, ...props}) => <p style={{margin: 0}} {...props}/>,
+                                        a: ({node, ...props}) => <a target="_blank" rel="noopener noreferrer" {...props}/>,
+                                        pre: ({node, children, ...props}) => (
+                                            <pre className="code-block" {...props}>
+                                                {children}
+                                            </pre>
+                                        ),
+                                        code: ({node, inline, className, children, ...props}) => {
+                                            const match = /language-(\w+)/.exec(className || '');
+                                            return !inline && match ? (
+                                                <code className={className} {...props}>
+                                                    {children}
+                                                </code>
+                                            ) : (
+                                                <code className="inline-code" {...props}>
+                                                    {children}
+                                                </code>
+                                            );
+                                        }
+                                    }}
+                                >
+                                    {msg.text}
+                                </ReactMarkdown>
+                                {msg.isStreaming && (
+                                    <span className="typing-indicator">
+                                        <span>.</span>
+                                        <span>.</span>
+                                        <span>.</span>
+                                    </span>
+                                )}
+                            </div>
+                        </div>
                     ))}
 
                     {isLoading && (
@@ -258,6 +295,20 @@ const ChatComponent = () => {
                 </div>
 
                 <Form className="input-area" onSubmit={(e) => { e.preventDefault(); handleSend(); }}>
+                    {selectedImage && (
+                        <div className="image-preview-container">
+                            <div className="image-preview">
+                                <Image src={selectedImage} alt="Preview" fluid />
+                                <Button 
+                                    variant="link" 
+                                    className="clear-image-btn"
+                                    onClick={clearImage}
+                                >
+                                    ×
+                                </Button>
+                            </div>
+                        </div>
+                    )}
                     <div className="d-flex gap-3">
                         <Form.Control
                             as="textarea"
@@ -267,14 +318,31 @@ const ChatComponent = () => {
                             onChange={handleInputChange}
                             disabled={isLoading}
                         />
-                        <Button
-                            className="send-button"
-                            variant={isDarkMode ? 'light' : 'primary'}
-                            type="submit"
-                            disabled={isLoading}
-                        >
-                            <IoSend style={{ width: '20px', height: '20px', marginLeft: '5px' }} />
-                        </Button>
+                        <div className="d-flex flex-column gap-2">
+                            <Button
+                                className="image-upload-button"
+                                variant={isDarkMode ? 'light' : 'primary'}
+                                onClick={() => fileInputRef.current?.click()}
+                                disabled={isLoading}
+                            >
+                                <IoImage style={{ width: '20px', height: '20px' }} />
+                            </Button>
+                            <Button
+                                className="send-button"
+                                variant={isDarkMode ? 'light' : 'primary'}
+                                type="submit"
+                                disabled={isLoading}
+                            >
+                                <IoSend style={{ width: '20px', height: '20px' }} />
+                            </Button>
+                        </div>
+                        <Form.Control
+                            type="file"
+                            ref={fileInputRef}
+                            className="d-none"
+                            accept="image/*"
+                            onChange={handleImageSelect}
+                        />
                     </div>
                 </Form>
             </Container>

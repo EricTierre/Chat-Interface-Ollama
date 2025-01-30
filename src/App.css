@@ -90,59 +90,56 @@
   border-bottom-left-radius: 4px;
 }
 
-/* Input area styling */
 .input-area {
-  background-color: rgba(255, 255, 255, 0.9);
-  padding: 24px 32px;
-  border-top: 1px solid rgba(130, 130, 130, 0.1);
-  position: sticky;
-  bottom: 0;
-  backdrop-filter: blur(10px);
-  margin: 0;
+  padding: 1rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
 }
 
-.input-area form {
-  max-width: 1000px;
-  margin: 0 auto;
+.input-container {
+  border-radius: 8px;
+  background-color: var(--bs-body-bg);
 }
 
 .message-input {
-  border-radius: 24px !important;
-  border: 1px solid rgba(130, 130, 130, 0.2) !important;
-  padding: 16px 24px !important;
-  font-size: 1rem !important;
-  resize: none !important;
-  transition: all 0.2s ease !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05) !important;
-  min-height: 60px !important;
-  max-height: 200px !important;
+  border-radius: 8px !important;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+  line-height: 1.5;
 }
 
 .message-input:focus {
-  box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.3) !important;
-  border-color: #2196F3 !important;
+  box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+  border-color: #80bdff;
 }
 
-/* Send button styling */
 .send-button {
-  border-radius: 24px !important;
-  padding: 12px !important;
-  transition: all 0.2s ease !important;
-  height: 60px !important;
-  width: 60px !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  margin-left: 8px !important;
+  border-radius: 6px;
+  min-width: 32px;
+  height: 32px;
 }
 
 .send-button:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(33, 150, 243, 0.2) !important;
+  transform: translateY(-50%) scale(1.05);
 }
 
-.send-button:active {
-  transform: translateY(0);
+.dark-mode .message-input {
+  background-color: #2d2d2d;
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+.dark-mode .message-input::placeholder {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.dark-mode .send-button {
+  background-color: #4a4a4a;
+  border-color: #4a4a4a;
+}
+
+.dark-mode .send-button:hover {
+  background-color: #5a5a5a;
+  border-color: #5a5a5a;
 }
 
 /* Model selector styling */
@@ -652,6 +649,87 @@
     transform: translateY(-4px);
     opacity: 1;
   }
+}
+
+/* Image upload styling */
+.image-upload-button {
+  border-radius: 24px !important;
+  padding: 12px !important;
+  transition: all 0.2s ease !important;
+  height: 60px !important;
+  width: 60px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.image-upload-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(33, 150, 243, 0.2) !important;
+}
+
+.image-preview-container {
+  margin-bottom: 16px;
+  border-radius: 12px;
+  overflow: hidden;
+  position: relative;
+  background-color: rgba(130, 130, 130, 0.05);
+}
+
+.image-preview {
+  position: relative;
+  max-height: 200px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.image-preview img {
+  max-height: 200px;
+  width: auto;
+  object-fit: contain;
+}
+
+.clear-image-btn {
+  position: absolute !important;
+  top: 8px !important;
+  right: 8px !important;
+  padding: 4px 12px !important;
+  font-size: 24px !important;
+  line-height: 1 !important;
+  color: #fff !important;
+  background-color: rgba(0, 0, 0, 0.5) !important;
+  border-radius: 50% !important;
+  border: none !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+}
+
+.clear-image-btn:hover {
+  background-color: rgba(0, 0, 0, 0.7) !important;
+}
+
+/* Message image styling */
+.message-image {
+  margin-bottom: 12px;
+  border-radius: 8px;
+  overflow: hidden;
+  background-color: rgba(130, 130, 130, 0.05);
+}
+
+.message-image img {
+  max-height: 300px;
+  width: auto;
+  object-fit: contain;
+}
+
+.dark-mode .message-image {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.dark-mode .image-preview-container {
+  background-color: rgba(255, 255, 255, 0.05);
 }
 
 /* Message animation */
