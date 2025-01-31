@@ -1,19 +1,65 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Container, Row, Col, Form, Button, Spinner, FloatingLabel } from 'react-bootstrap';
+import { Container, Row, Col, Form, Button, FloatingLabel, Collapse, Image } from 'react-bootstrap';
 import axios from 'axios';
-import { IoSend } from "react-icons/io5";
+import { IoSend, IoImage } from "react-icons/io5";
+import ReactMarkdown from 'react-markdown';
+import remarkMath from 'remark-math';
+import remarkGfm from 'remark-gfm';
+import rehypeKatex from 'rehype-katex';
+import rehypeHighlight from 'rehype-highlight';
 import 'bootstrap/dist/css/bootstrap.min.css';
+import 'highlight.js/styles/github-dark.css';
+import 'katex/dist/katex.min.css';
 
 const ChatComponent = () => {
     const [input, setInput] = useState('');
     const [messages, setMessages] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
-    const [model, setModel] = useState("llama3");
+    const [model, setModel] = useState("");
+    const [models, setModels] = useState([]);
     const [isDarkMode, setIsDarkMode] = useState(true);
+    const [selectedImage, setSelectedImage] = useState(null);
     const messageContainerRef = useRef(null);
+    const fileInputRef = useRef(null);
+
+    const fetchModels = async () => {
+        try {
+            const response = await axios.get(`${process.env.REACT_APP_API_URL}/api/tags`);
+            console.log(response.data)
+            const modelList = Array.isArray(response.data.models) ? response.data.models : [];
+            setModels(modelList);
+            if (modelList.length > 0) {
+                setModel(modelList[0].name);
+            }
+        } catch (error) {
+            console.error('Error fetching models:', error);
+        }
+    };
+
+    useEffect(() => {
+        fetchModels();
+    }, []);
 
     const handleInputChange = (e) => {
         setInput(e.target.value);
+    };
+
+    const handleImageSelect = (event) => {
+        const file = event.target.files[0];
+        if (file && file.type.startsWith('image/')) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                setSelectedImage(e.target.result);
+            };
+            reader.readAsDataURL(file);
+        }
+    };
+
+    const clearImage = () => {
+        setSelectedImage(null);
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
     };
 
     const scrollToBottom = () => {
@@ -23,53 +69,116 @@ const ChatComponent = () => {
     };
 
     const handleSend = async () => {
-        if (input.trim() === '') return;
+        if (input.trim() === '' && !selectedImage) return;
 
-        const userMessage = { sender: 'user', text: input };
-        setMessages([...messages, userMessage]);
+        const userMessage = { 
+            sender: 'user', 
+            text: input,
+            image: selectedImage 
+        };
+        setMessages(prev => [...prev, userMessage]);
         setInput('');
+        setSelectedImage(null);
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
         setIsLoading(true);
 
-        let ongoingResponse = '';
-
         try {
-            const response = await axios.post(`${process.env.REACT_APP_API_URL}/api/generate`, {
-                model: model,
-                prompt: input,
-            }, {
+            const response = await fetch(`${process.env.REACT_APP_API_URL}/api/chat`, {
+                method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                responseType: 'text',
+                body: JSON.stringify({
+                    model: model,
+                    messages: [{ 
+                        role: 'user', 
+                        content: input,
+                        images: selectedImage ? [selectedImage] : undefined
+                    }],
+                    stream: true
+                })
             });
 
-            const dataLines = response.data.split('\n');
-            for (const line of dataLines) {
-                if (line.trim()) {
-                    const responseData = JSON.parse(line);
-                    ongoingResponse += responseData.response;
-                    // eslint-disable-next-line
-                    setMessages((prevMessages) => {
-                        const updatedMessages = [...prevMessages];
-                        if (updatedMessages.length > 0 && updatedMessages[updatedMessages.length - 1].sender === 'api') {
-                            updatedMessages[updatedMessages.length - 1] = { sender: 'api', text: ongoingResponse };
-                        } else {
-                            updatedMessages.push({ sender: 'api', text: ongoingResponse });
-                        }
-                        return updatedMessages;
-                    });
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let responseText = '';
 
-                    if (responseData.done) {
-                        setIsLoading(false);
-                        break;
+            setMessages(prev => [...prev, { sender: 'api', text: '', isStreaming: true }]);
+
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value);
+                const lines = chunk.split('\n');
+
+                for (const line of lines) {
+                    if (line.trim() === '') continue;
+                    try {
+                        const data = JSON.parse(line);
+                        responseText += data.message?.content || '';
+                        
+                        // Handle thinking content
+                        let isThinking = false;
+                        let thinkingContent = '';
+                        let mainContent = '';
+                        
+                        const currentText = data.message?.content || '';
+                        
+                        if (currentText.includes('<think>')) {
+                            isThinking = true;
+                            thinkingContent = responseText;
+                        } else if (currentText.includes('</think>')) {
+                            isThinking = false;
+                            const parts = responseText.split('</think>');
+                            thinkingContent = parts[0].replace('<think>', '').trim();
+                            mainContent = parts[1].trim();
+                        } else {
+                            if (responseText.includes('</think>')) {
+                                const parts = responseText.split('</think>');
+                                thinkingContent = parts[0].replace('<think>', '').trim();
+                                mainContent = parts[1].trim();
+                            } else if (responseText.includes('<think>')) {
+                                thinkingContent = responseText.replace('<think>', '').trim();
+                            } else {
+                                mainContent = responseText;
+                            }
+                        }
+                        
+                        setMessages(prev => {
+                            const newMessages = [...prev];
+                            const lastMessage = newMessages[newMessages.length - 1];
+                            if (lastMessage.sender === 'api') {
+                                if (thinkingContent) {
+                                    lastMessage.thinking = thinkingContent;
+                                    lastMessage.isThinkingOpen = true;
+                                }
+                                lastMessage.text = mainContent;
+                                if (data.done) {
+                                    lastMessage.isStreaming = false;
+                                }
+                            }
+                            return newMessages;
+                        });
+
+                        if (data.done) {
+                            setIsLoading(false);
+                            break;
+                        }
+                    } catch (e) {
+                        console.error('Error parsing JSON:', e);
                     }
                 }
             }
-
-            setIsLoading(false);
         } catch (error) {
-            const errorMessage = { sender: 'api', text: 'Error: Could not retrieve response from API' };
-            setMessages((prevMessages) => [...prevMessages, errorMessage]);
+            console.error('Error:', error);
+            setMessages(prev => [...prev, { 
+                sender: 'api', 
+                text: 'Error: Could not retrieve response from API',
+                isStreaming: false 
+            }]);
             setIsLoading(false);
         }
     };
@@ -78,120 +187,164 @@ const ChatComponent = () => {
         scrollToBottom();
     }, [messages]);
 
-    const lightTheme = {
-        backgroundColor: '#f9f9f9',
-        color: 'black',
-    };
-
-    const darkTheme = {
-        backgroundColor: '#2c2c2c',
-        color: 'white',
-    };
-
-    const themeStyles = isDarkMode ? darkTheme : lightTheme;
-
     return (
-        <div style={{ ...themeStyles }}>
-            <Container style={{ ...themeStyles, margin: 'auto', height: '100vh', display: 'flex', flexDirection: 'column' }}>
-                <Row style={{ flex: 1 }}>
-                    <Col style={{ display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
-                        <FloatingLabel className='mb-3 mt-3' controlId="floatingSelect" label="Models" style={{ backgroundColor: 'transparent' }}>
-                            <Form.Select
-                                aria-label="Default select example"
-                                value={model}
-                                onChange={(e) => setModel(e.target.value)}
-                                style={{
-                                    backgroundColor: isDarkMode ? '#555' : 'white',
-                                    color: isDarkMode ? 'white' : 'black',
-                                    borderColor: isDarkMode ? '#444' : '#ccc'
-                                }}
-                            >
-                                {/* ADDED MORE MODELS */}
-                                <option value={"llama3"}>llama3</option>
-                                <option value={"phi3:medium"}>phi3:medium</option>
-                            </Form.Select>
-                        </FloatingLabel>
-
-                        <Form.Check
-                            type="switch"
-                            id="dark-mode-switch"
-                            label={isDarkMode ? 'Dark Mode' : 'Light Mode'}
-                            checked={isDarkMode}
-                            onChange={() => setIsDarkMode(prevMode => !prevMode)}
-                            className="mb-3"
-                        />
-
-                        <div className='mb-3' ref={messageContainerRef} style={{ flex: 1, Height: '60vh', maxHeight: '65vh', overflowY: 'auto', border: '1px solid #ccc', borderRadius: '8px', padding: '10px', ...themeStyles }}>
-                            {messages.map((msg, index) => (
-                                <div
-                                    key={index}
-                                    style={{
-                                        marginBottom: '30px',
-                                        padding: '8px',
-                                        borderRadius: '8px',
-                                        backgroundColor: msg.sender === 'user' ? (isDarkMode ? '#818589' : '#818589') : 'transparent',
-                                        color: msg.sender === 'user' ? 'white' : isDarkMode ? 'white' : 'black',
-                                        textAlign: msg.sender === 'user' ? 'right' : 'left',
-                                        alignSelf: msg.sender === 'user' ? 'flex-end' : 'flex-start',
-                                        marginLeft: msg.sender === 'user' ? 'auto' : '0',
-                                        width: msg.sender === 'user' ? '50%' : null,
-                                        fontFamily: 'monospace',
-                                        whiteSpace: 'pre-wrap',
-                                        wordWrap: 'break-word',
-                                        border: msg.sender === 'user' ? '1px solid #ccc' : null,
-                                        // backgroundColor: msg.text.includes('```code```') ? '#f0f0f0' : (msg.sender === 'user' ? (isDarkMode ? '#818589' : '#818589') : 'transparent'),
-                                    }}
-                                >
-                                    {msg.text.split('\n').map((line, i) => (
-                                        <React.Fragment key={i}>
-                                            {/* {msg.text.includes('```code```') ? (
-                                                <code style={{ display: 'block', padding: '4px' }}>{line}</code>
-                                            ) : ( */}
-                                                <span>{line}</span>
-                                            {/* )} */}
-                                            <br />
-                                        </React.Fragment>
-                                    ))}
-                                </div>
+        <div className={`chat-container ${isDarkMode ? 'dark-mode' : ''}`}>
+            <Container className="chat-layout">
+                <div className="header-controls">
+                    <FloatingLabel controlId="floatingSelect" label="Select Model">
+                        <Form.Select
+                            className="model-select"
+                            value={model}
+                            onChange={(e) => setModel(e.target.value)}
+                        >
+                            {models.map((modelOption) => (
+                                <option key={modelOption.name} value={modelOption.name}>
+                                    {modelOption.name}
+                                </option>
                             ))}
+                        </Form.Select>
+                    </FloatingLabel>
 
+                    <Form.Check
+                        type="switch"
+                        id="dark-mode-switch"
+                        label={isDarkMode ? 'Dark Mode' : 'Light Mode'}
+                        checked={isDarkMode}
+                        onChange={() => setIsDarkMode(prevMode => !prevMode)}
+                        className="theme-switch"
+                    />
+                </div>
 
-                            {isLoading && (
-                                <div style={{ textAlign: 'center', marginTop: '10px' }}>
-                                    <Spinner animation="border" role="status">
-                                        <span className="sr-only"></span>
-                                    </Spinner>
+                <div className="message-container" ref={messageContainerRef}>
+                    {messages.map((msg, index) => (
+                        <div key={index} className={`message-group`}>
+                            {msg.sender === 'api' && msg.thinking && (
+                                <div className="thinking-container">
+                                    <div
+                                        className="thinking-header"
+                                        onClick={() => {
+                                            setMessages(prev => {
+                                                const newMessages = [...prev];
+                                                const message = newMessages[index];
+                                                message.isThinkingOpen = !message.isThinkingOpen;
+                                                return newMessages;
+                                            });
+                                        }}
+                                    >
+                                        <span className={`toggle-icon ${msg.isThinkingOpen ? 'expanded' : ''}`}>▶</span>
+                                        Thinking Process
+                                    </div>
+                                    <Collapse in={msg.isThinkingOpen}>
+                                        <div>
+                                            <div className="thinking-content">
+                                                {msg.thinking}
+                                            </div>
+                                        </div>
+                                    </Collapse>
                                 </div>
                             )}
+                            <div className={`message ${msg.sender === 'user' ? 'user-message' : 'api-message'}`}>
+                                {msg.image && (
+                                    <div className="message-image">
+                                        <Image src={msg.image} alt="Uploaded" fluid />
+                                    </div>
+                                )}
+                                <ReactMarkdown 
+                                    remarkPlugins={[remarkMath, remarkGfm]}
+                                    rehypePlugins={[rehypeKatex, rehypeHighlight]}
+                                    components={{
+                                        p: ({node, ...props}) => <p style={{margin: 0}} {...props}/>,
+                                        a: ({node, ...props}) => <a target="_blank" rel="noopener noreferrer" {...props}/>,
+                                        pre: ({node, children, ...props}) => (
+                                            <pre className="code-block" {...props}>
+                                                {children}
+                                            </pre>
+                                        ),
+                                        code: ({node, inline, className, children, ...props}) => {
+                                            const match = /language-(\w+)/.exec(className || '');
+                                            return !inline && match ? (
+                                                <code className={className} {...props}>
+                                                    {children}
+                                                </code>
+                                            ) : (
+                                                <code className="inline-code" {...props}>
+                                                    {children}
+                                                </code>
+                                            );
+                                        }
+                                    }}
+                                >
+                                    {msg.text}
+                                </ReactMarkdown>
+                                {msg.isStreaming && (
+                                    <span className="typing-indicator">
+                                        <span>.</span>
+                                        <span>.</span>
+                                        <span>.</span>
+                                    </span>
+                                )}
+                            </div>
                         </div>
-                        <Form className='mb-3' onSubmit={(e) => { e.preventDefault(); handleSend(); }} style={{ display: 'flex', alignItems: 'center', marginTop: 'auto' }}>
-                            <Form.Control
-                                as="textarea"
-                                placeholder="Your message ..."
-                                value={input}
-                                onChange={handleInputChange}
-                                disabled={isLoading}
-                                style={{
-                                    flex: 1,
-                                    marginRight: '10px',
-                                    minHeight: '150px',
-                                    resize: 'none',
-                                    ...themeStyles,
-                                    backgroundColor: isDarkMode ? '#555' : 'white',
-                                    color: isDarkMode ? 'white' : 'black',
-                                }}
-                            />
+                    ))}
+
+                    {isLoading && (
+                        <div className="spinner-container">
+                            <div className="spinner" />
+                        </div>
+                    )}
+                </div>
+
+                <Form className="input-area" onSubmit={(e) => { e.preventDefault(); handleSend(); }}>
+                    {selectedImage && (
+                        <div className="image-preview-container">
+                            <div className="image-preview">
+                                <Image src={selectedImage} alt="Preview" fluid />
+                                <Button 
+                                    variant="link" 
+                                    className="clear-image-btn"
+                                    onClick={clearImage}
+                                >
+                                    ×
+                                </Button>
+                            </div>
+                        </div>
+                    )}
+                    <div className="d-flex gap-3">
+                        <Form.Control
+                            as="textarea"
+                            className="message-input"
+                            placeholder="Type your message here..."
+                            value={input}
+                            onChange={handleInputChange}
+                            disabled={isLoading}
+                        />
+                        <div className="d-flex flex-column gap-2">
                             <Button
-                                variant={isDarkMode ? 'secondary' : 'primary'}
+                                className="image-upload-button"
+                                variant={isDarkMode ? 'light' : 'primary'}
+                                onClick={() => fileInputRef.current?.click()}
+                                disabled={isLoading}
+                            >
+                                <IoImage style={{ width: '20px', height: '20px' }} />
+                            </Button>
+                            <Button
+                                className="send-button"
+                                variant={isDarkMode ? 'light' : 'primary'}
                                 type="submit"
                                 disabled={isLoading}
-                                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                             >
-                                <IoSend style={{ width: '20px', height: '20px', marginLeft: '5px' }} />
+                                <IoSend style={{ width: '20px', height: '20px' }} />
                             </Button>
-                        </Form>
-                    </Col>
-                </Row>
+                        </div>
+                        <Form.Control
+                            type="file"
+                            ref={fileInputRef}
+                            className="d-none"
+                            accept="image/*"
+                            onChange={handleImageSelect}
+                        />
+                    </div>
+                </Form>
             </Container>
         </div>
     );
